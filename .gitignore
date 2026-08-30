@@ -1,0 +1,12 @@
+config.local.json
+data/queue.jsonl
+data/state.json
+__pycache__/
+*.pyc
+
+# Italian-language personal reference copies — GitHub gets English only
+readmeitalian.md
+SKILL-italiano-riferimento.md
+
+# local smoke-test scratch vault, never part of the template
+_test_vault/

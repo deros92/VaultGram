@@ -1,0 +1,5 @@
+{
+  "bot_token": "YOUR_BOT_TOKEN_HERE",
+  "allowed_user_id": 0,
+  "vault_path": "/path/to/your/obsidian/vault"
+}
