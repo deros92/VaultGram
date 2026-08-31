@@ -1,4 +1,4 @@
-# Telegram → Obsidian Link Inbox
+# VaultGram — Telegram → Obsidian Link Inbox
 
 ![A robot sorting an incoming stream of URLs into folders](asset/Bot_telegram.png)
 

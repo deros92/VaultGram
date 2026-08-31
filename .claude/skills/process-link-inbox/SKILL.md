@@ -14,7 +14,7 @@ description: Processes the queue of links captured by your personal Telegram bot
 > does for its fictitious `Security/README.md`.
 
 Processes the links accumulated through your personal Telegram bot (project
-`telegram-obsidian-link-inbox`) and turns them into organized notes inside
+`VaultGram`) and turns them into organized notes inside
 your Obsidian vault.
 
 ## Paths

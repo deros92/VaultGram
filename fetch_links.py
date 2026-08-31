@@ -199,7 +199,7 @@ def regenerate_inbox_note(vault_path):
     lines.append("")
     lines.append(
         "> This file is regenerated automatically by `fetch_links.py` "
-        "(telegram-obsidian-link-inbox). Do not edit it by hand: changes are "
+        "(VaultGram). Do not edit it by hand: changes are "
         "overwritten on the next run. To mark a link as processed, use the "
         "`/process-link-inbox` skill."
     )
