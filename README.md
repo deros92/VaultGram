@@ -16,6 +16,33 @@ anytime, even while your PC is off for days), and a local script + an
 optional [Claude Code](https://claude.com/claude-code) skill that turns the
 backlog into organized notes only when you decide to run it.
 
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph Anytime["📱 Anytime, from your phone"]
+        A["You send a link<br/>to your Telegram bot"]
+    end
+
+    subgraph Local["💻 Only when you run it, at your computer"]
+        B{"fetch_links.py<br/>polls Telegram"}
+        C{"Sender is your<br/>allowed_user_id?"}
+        D(["Discarded silently<br/>no reply, no action"])
+        E["queue.jsonl +<br/>_Inbox/Pending Links.md"]
+        F["/process-link-inbox skill<br/>(Claude Code or any agent)"]
+        G["Organized notes<br/>filed into your vault"]
+        H["fetch_links.py --cleanup<br/>marks the link processed"]
+    end
+
+    A -. "queued on Telegram's side<br/>until you run the script" .-> B
+    B --> C
+    C -- no --> D
+    C -- yes --> E
+    E --> F
+    F --> G
+    F --> H
+```
+
 ## Architecture
 
 - **Polling, not a webhook.** `fetch_links.py` only makes outbound HTTPS
