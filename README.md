@@ -43,6 +43,18 @@ flowchart LR
     F --> H
 ```
 
+**In practice, on your phone:**
+
+| 1. Send the link | 2. Next time you run the script |
+|---|---|
+| ![Link sent to the bot, no reply yet](asset/vaultgram1.png) | ![Green confirmation: 1 new link(s) queued](asset/vaultgram2.png) |
+| Nothing happens right away — the message just sits queued. | `fetch_links.py` polls Telegram and confirms what it picked up. |
+
+There's no third "completed" screenshot on purpose: once the
+`/process-link-inbox` skill files a link into the vault, cleanup **deletes**
+the original message from the chat rather than replying "done" — the note
+now living in your vault *is* the completion signal, not a Telegram message.
+
 ## Architecture
 
 - **Polling, not a webhook.** `fetch_links.py` only makes outbound HTTPS
