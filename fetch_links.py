@@ -37,7 +37,7 @@ DATA_DIR = BASE_DIR / "data"
 QUEUE_PATH = DATA_DIR / "queue.jsonl"
 STATE_PATH = DATA_DIR / "state.json"
 
-URL_RE = re.compile(r"https?://\S+")
+URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
 
 def load_config():
@@ -218,6 +218,23 @@ def extract_links(text):
     return urls, remainder
 
 
+def log_skipped(reason, payload):
+    """Append every skipped update to disk, whatever the reason. Before this
+    function these cases only showed up in transient stderr output (or
+    nothing at all): if nobody was watching that exact run's output, the
+    update vanished without a trace. Now they persist to a file that can be
+    reviewed after the fact, even on a later run."""
+    debug_path = DATA_DIR / "skipped_updates.jsonl"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "logged_at": datetime.now(timezone.utc).isoformat(),
+        "reason": reason,
+        "update": payload,
+    }
+    with open(debug_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
 def poll(config):
     bot_token = config["bot_token"]
     allowed_user_id = config["allowed_user_id"]
@@ -240,11 +257,28 @@ def poll(config):
     duplicate_count = 0
     last_authorized_chat_id = None
     skipped_unauthorized = 0
+    skipped_not_a_message = 0  # updates that aren't a plain "message" (edited_message,
+                                # channel_post, my_chat_member, reactions, etc.)
+    skipped_no_from = 0        # "message" present but with no sender (e.g. an
+                                # anonymous admin/channel post)
+    skipped_no_link = 0        # authorized message with no http(s):// at all — e.g. a
+                                # photo/video with no caption, an uppercase scheme
+                                # (HTTPS://) the old regex missed, or a link shared only
+                                # as a hidden entity with no raw URL in the visible text
 
     for upd in updates:
         max_update_id = max(max_update_id, upd["update_id"])
         msg = upd.get("message")
-        if not msg or "from" not in msg:
+        if not msg:
+            skipped_not_a_message += 1
+            other_type = next((k for k in upd if k != "update_id"), "unknown")
+            print(f"Non-message update ignored (type: {other_type})", file=sys.stderr)
+            log_skipped("not_a_message", upd)
+            continue
+        if "from" not in msg:
+            skipped_no_from += 1
+            print(f"Message without a sender ignored: message_id={msg.get('message_id')}", file=sys.stderr)
+            log_skipped("no_from", upd)
             continue
 
         if msg["from"]["id"] != allowed_user_id:
@@ -255,7 +289,9 @@ def poll(config):
         text = msg.get("text") or msg.get("caption") or ""
         urls, note = extract_links(text)
         if not urls:
+            skipped_no_link += 1
             print(f"Message without a link ignored: {text[:80]!r}", file=sys.stderr)
+            log_skipped("no_link", upd)
             continue
 
         msg_date = datetime.fromtimestamp(msg["date"], tz=timezone.utc).isoformat()
@@ -295,6 +331,14 @@ def poll(config):
         print(f"Duplicates (already seen before, skipped): {duplicate_count}")
     if skipped_unauthorized:
         print(f"Messages discarded (unauthorized sender): {skipped_unauthorized}")
+    if skipped_not_a_message:
+        print(f"Updates ignored (not a message, e.g. edited/channel_post): {skipped_not_a_message}")
+    if skipped_no_from:
+        print(f"Messages ignored (no sender): {skipped_no_from}")
+    if skipped_no_link:
+        print(f"Messages ignored (no link recognized in the text): {skipped_no_link}")
+    if skipped_not_a_message or skipped_no_from or skipped_no_link:
+        print(f"Details saved to {DATA_DIR / 'skipped_updates.jsonl'} for manual review.")
     print(f"Total pending links: {pending_count}  ({note_path})")
 
     if new_items and last_authorized_chat_id is not None:
@@ -314,24 +358,52 @@ def poll(config):
 CLEANUP_STATUSES = ("processed", "duplicate")
 
 
+def resolve_root_status(items_by_id, item):
+    """Follow the duplicate_of chain to find a link's "real" status: a
+    'duplicate' item has no content of its own, it inherits the fate of
+    whichever item captured that URL first. If that root is 'failed', the
+    link was never archived anywhere — even though THIS particular copy is
+    'duplicate', deleting it would take away the only remaining reminder
+    that the link still needs to be resolved."""
+    seen = set()
+    while item.get("status") == "duplicate":
+        dup_of = item.get("duplicate_of")
+        if not dup_of or dup_of in seen:
+            break
+        seen.add(dup_of)
+        parent = items_by_id.get(dup_of)
+        if not parent:
+            break
+        item = parent
+    return item.get("status")
+
+
 def cleanup(config):
     """Delete on Telegram the original messages for every item already
     'processed' or 'duplicate' (a link already seen, never summarized again
-    but still worth clearing from the chat) and not yet deleted. A message
-    can contain more than one link (several queue items sharing the same
-    message_id): it only gets deleted once."""
+    but still worth clearing from the chat) and not yet deleted — unless the
+    duplicate_of chain leads back to a 'failed' item: in that case the
+    content was never archived anywhere, so the message (even if it's just a
+    duplicate) stays visible in the chat as a reminder, exactly like the
+    original 'failed' item. A message can contain more than one link
+    (several queue items sharing the same message_id): it only gets deleted
+    once."""
     bot_token = config["bot_token"]
     items = read_queue()
+    items_by_id = {item["id"]: item for item in items}
 
     to_delete = {}  # (chat_id, message_id) -> True
     for item in items:
-        if item.get("status") in CLEANUP_STATUSES and not item.get("telegram_deleted"):
-            if "message_id" in item and "chat_id" in item:
-                to_delete[(item["chat_id"], item["message_id"])] = True
-            else:
-                # Older items captured before message_id/chat_id were saved
-                # in the queue: cannot be deleted automatically.
-                pass
+        if item.get("status") not in CLEANUP_STATUSES or item.get("telegram_deleted"):
+            continue
+        if resolve_root_status(items_by_id, item) == "failed":
+            continue  # duplicate of a link that was never resolved: don't clean it up
+        if "message_id" in item and "chat_id" in item:
+            to_delete[(item["chat_id"], item["message_id"])] = True
+        else:
+            # Older items captured before message_id/chat_id were saved
+            # in the queue: cannot be deleted automatically.
+            pass
 
     if not to_delete:
         print("Nothing to delete on Telegram.")

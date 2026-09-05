@@ -25,8 +25,15 @@ your Obsidian vault.
   - `pending` — not processed yet
   - `processed` — archived with real content: gets cleaned up from Telegram
   - `duplicate` — a link already seen before (marked automatically by
-    `fetch_links.py`), **must not be summarized again**: also gets cleaned
-    up from Telegram, alongside `processed` items
+    `fetch_links.py`), **must not be summarized again**: gets cleaned up
+    from Telegram alongside `processed` items, **unless following its
+    `duplicate_of` chain leads back to a `failed` item** — in that case the
+    content was never archived anywhere, so the duplicate stays in the chat
+    too, same treatment as a `failed` item (this typically happens when the
+    user re-sends the same failed link hoping for a retry: that re-send does
+    NOT trigger a new fetch attempt, it just gets queued as a `duplicate` of
+    the original `failed` row — to actually get a retry, the user needs to
+    supply new content, e.g. pasted text or a manual clip)
   - `failed` — content could not be recovered in any way (see step 3a):
     **cleanup always ignores it on purpose**, the Telegram message stays
     visible in the chat as a reminder until the user resolves it)
@@ -233,13 +240,15 @@ your Obsidian vault.
 5. **Telegram cleanup**: run `python fetch_links.py --cleanup`. This
    automatically deletes (on both sides, without asking for confirmation —
    this is the default behavior once you've set it up this way) the original
-   Telegram messages of every item just marked `processed` or `duplicate`:
-   the content now lives permanently in the vault, keeping it on Telegram
-   too would just be a duplicate. **`failed` items are never touched by
-   cleanup** (by design, `CLEANUP_STATUSES` excludes them) — they stay in
-   the chat on purpose. Older items without a saved `message_id`/`chat_id`
-   (captured before this feature existed) are silently skipped, not an
-   error.
+   Telegram messages of items marked `processed`, and of `duplicate` items
+   whose `duplicate_of` chain leads back to a `processed` item: the content
+   now lives permanently in the vault, keeping it on Telegram too would just
+   be a duplicate. **`failed` items are never touched by cleanup, and
+   neither are `duplicate` items whose chain leads back to a `failed` one**
+   (by design, `resolve_root_status()` + `CLEANUP_STATUSES` exclude both) —
+   they stay in the chat on purpose, since that content was never archived
+   anywhere. Older items without a saved `message_id`/`chat_id` (captured
+   before this feature existed) are silently skipped, not an error.
 
 6. **Final summary**: for each processed link, tell the user where it ended
    up (new or extended note, path). List `failed` items **separately and

@@ -1,6 +1,7 @@
 config.local.json
 data/queue.jsonl
 data/state.json
+data/skipped_updates.jsonl
 __pycache__/
 *.pyc
 

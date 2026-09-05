@@ -84,12 +84,14 @@ Obsidian's graph view instead of sitting as disconnected clippings:
   synced, or shared. If it ever leaks, revoke it instantly via BotFather
   (`/revoke`) and issue a new one.
 - **Dedup.** The same link sent more than once is queued once (`pending`)
-  and marked `duplicate` afterwards — never summarized twice, but still
-  cleaned up from the chat.
+  and marked `duplicate` afterwards — never summarized twice, and cleaned up
+  from the chat too, unless it's a duplicate of a `failed` item (see below),
+  in which case it's left alone just like the original.
 - **Failures don't get silently deleted.** If a link's content can't be
   recovered at all, it's marked `failed`, not `processed` — and cleanup
-  intentionally never deletes `failed` items from Telegram, so you always
-  have a visible list of what still needs your attention (see below).
+  intentionally never deletes `failed` items (or duplicates of them) from
+  Telegram, so you always have a visible list of what still needs your
+  attention (see below).
 
 ## Setup
 
